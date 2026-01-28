@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MyResource</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        background: #0b0c10;
+        color: #e9edf1;
+        padding: 24px;
+      }
+      .container { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+      .card {
+        background: #12141a;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 16px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+      }
+      h1 { margin: 0; font-size: 28px; }
+      .label { font-size: 14px; opacity: 0.85; margin-bottom: 6px; }
+      .small { font-size: 12px; opacity: 0.7; }
+      .row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+      .big { font-size: 40px; font-weight: 800; line-height: 1.1; }
+
+      .tabs { display:flex; gap:10px; flex-wrap:wrap; }
+      .tab {
+        padding:10px 12px;
+        border-radius: 999px;
+        cursor:pointer;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: transparent;
+        color:#e9edf1;
+        opacity: 0.85;
+        font-weight: 700;
+      }
+      .tab.active {
+        background: rgba(255,255,255,0.10);
+        border-color: rgba(255,255,255,0.22);
+        opacity: 1;
+      }
+
+      input[type="text"]{
+        width:100%; padding:12px; border-radius:12px;
+        border:1px solid rgba(255,255,255,0.12);
+        background:#0f1117; color:#e9edf1; outline:none; font-size:14px;
+      }
+      .btn{
+        padding:12px 14px; border-radius:12px; cursor:pointer;
+        border:1px solid rgba(255,255,255,0.18);
+        background:#1c2030; color:#e9edf1; font-weight:700;
+      }
+      .btn-danger{
+        padding:10px 12px; border-radius:12px; cursor:pointer;
+        border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255, 80, 80, 0.12); color:#ffd2d2; font-weight:700;
+      }
+      .btn-ghost{
+        padding:10px 12px; border-radius:12px; cursor:pointer;
+        border:1px solid rgba(255,255,255,0.12);
+        background:transparent; color:#e9edf1; font-weight:700;
+        opacity:0.85;
+      }
+      .box{
+        padding:12px; border-radius:12px;
+        border:1px solid rgba(255,255,255,0.10);
+        background:rgba(255,255,255,0.03);
+      }
+      .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .list { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+      .item{
+        display:flex; gap:12px; align-items:center;
+        padding:12px; border-radius:14px;
+        border:1px solid rgba(255,255,255,0.08);
+        background:rgba(255,255,255,0.02);
+      }
+      .item-text{ font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; }
+      .meta{ font-size:12px; opacity:0.75; }
+      .meta-row{ display:flex; gap:10px; align-items:center; margin-top:4px; flex-wrap:wrap; }
+
+      .progressOuter{
+        width:100%; height:10px; border-radius:999px;
+        background:rgba(255,255,255,0.08);
+        overflow:hidden; border:1px solid rgba(255,255,255,0.08);
+      }
+      .progressInner{
+        height:100%; background:rgba(255,255,255,0.35); border-radius:999px;
+      }
+      @media (max-width: 860px){
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- React через CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const STORAGE_KEY = "resource-tracker-v2-days";
+
+      // Настройки "когда ресурса мало" — для ВЫБРАННОГО ДНЯ
+      const LOW_RESOURCE_THRESHOLD = 20;
+      const VERY_LOW_RESOURCE_THRESHOLD = 0;
+
+      function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+      function formatSigned(n){ n = Math.round(n); return n > 0 ? "+"+n : ""+n; }
+
+      function toISODateLocal(d){
+        // YYYY-MM-DD в локальном часовом поясе
+        const dt = new Date(d);
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth()+1).padStart(2,"0");
+        const day = String(dt.getDate()).padStart(2,"0");
+        return `${y}-${m}-${day}`;
+      }
+      function shiftISODate(baseISO, daysDelta){
+        const [y,m,d] = baseISO.split("-").map(Number);
+        const dt = new Date(y, m-1, d);
+        dt.setDate(dt.getDate() + daysDelta);
+        return toISODateLocal(dt);
+      }
+
+      function pickRandom(arr, avoidId=null){
+        if(!arr.length) return null;
+        if(arr.length === 1) return arr[0];
+        const filtered = avoidId ? arr.filter(x => x.id !== avoidId) : arr;
+        const pool = filtered.length ? filtered : arr;
+        return pool[Math.floor(Math.random()*pool.length)];
+      }
+
+      function dayLabel(iso){
+        // Пишем человеко-понятно: "Сегодня", "Вчера" или дата
+        const today = toISODateLocal(new Date());
+        const yest = shiftISODate(today, -1);
+        if(iso === today) return "Сегодня";
+        if(iso === yest) return "Вчера";
+        return iso;
+      }
+
+      function ListCard({ title, subtitle, items, onRemove, onUpdateScore }){
+        return (
+          <div className="card">
+            <div className="row">
+              <div>
+                <div className="label">{title}</div>
+                <div className="small">{subtitle}</div>
+              </div>
+            </div>
+
+            {items.length === 0 ? (
+              <div className="small">(пусто)</div>
+            ) : (
+              <div className="list">
+                {items.map(it => (
+                  <div key={it.id} className="item">
+                    <div style={{flex:1, minWidth:0}}>
+                      <div className="item-text">{it.text}</div>
+
+                      <div className="meta-row">
+                        <span className="meta">эффект: {formatSigned(it.score)}</span>
+                        <span className="meta">дата: {it.date}</span>
+                        <span className="meta">поправить:</span>
+                      </div>
+
+                      <input
+                        type="range"
+                        min="-100"
+                        max="100"
+                        value={it.score}
+                        onChange={(e)=>onUpdateScore(it.id, e.target.value)}
+                        style={{width:"100%", marginTop:6}}
+                      />
+                    </div>
+                    <button className="btn-danger" onClick={()=>onRemove(it.id)}>Удалить</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function App(){
+        const [text, setText] = React.useState("");
+        const [score, setScore] = React.useState(0);
+        const [items, setItems] = React.useState([]);
+
+        // Выбранный день: храним ISO YYYY-MM-DD
+        const todayISO = React.useMemo(()=>toISODateLocal(new Date()), []);
+        const yesterdayISO = React.useMemo(()=>shiftISODate(todayISO, -1), [todayISO]);
+        const [selectedDate, setSelectedDate] = React.useState(todayISO);
+
+        const [suggestion, setSuggestion] = React.useState(null);
+        const lastSuggestedId = React.useRef(null);
+
+        // загрузка + миграция (если старые записи без date — считаем, что они "сегодня")
+        React.useEffect(()=>{
+          try{
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if(raw){
+              const parsed = JSON.parse(raw);
+              const migrated = Array.isArray(parsed)
+                ? parsed.map(it => ({
+                    ...it,
+                    date: it.date || todayISO
+                  }))
+                : [];
+              setItems(migrated);
+            } else {
+              // на всякий: попробуем подхватить старый ключ v1, если есть
+              const old = localStorage.getItem("resource-tracker-v1");
+              if(old){
+                const parsedOld = JSON.parse(old);
+                const migratedOld = Array.isArray(parsedOld)
+                  ? parsedOld.map(it => ({ ...it, date: it.date || todayISO }))
+                  : [];
+                setItems(migratedOld);
+              }
+            }
+          }catch{}
+        },[todayISO]);
+
+        React.useEffect(()=>{
+          try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }catch{}
+        },[items]);
+
+        // Фильтр по выбранному дню
+        const dayItems = React.useMemo(
+          ()=> items.filter(it => it.date === selectedDate),
+          [items, selectedDate]
+        );
+
+        // Ресурс СЧИТАЕМ ПО ВЫБРАННОМУ ДНЮ
+        const resource = React.useMemo(
+          ()=> dayItems.reduce((acc, it)=> acc + (Number(it.score)||0), 0),
+          [dayItems]
+        );
+
+        const filling = React.useMemo(()=> dayItems.filter(i=>i.score>0), [dayItems]);
+        const draining = React.useMemo(()=> dayItems.filter(i=>i.score<0), [dayItems]);
+        const neutral = React.useMemo(()=> dayItems.filter(i=>i.score===0), [dayItems]);
+
+        // Для рандома — общий список наполняющих (из всех дней)
+        const globalFilling = React.useMemo(()=> items.filter(i=>i.score>0), [items]);
+
+        // Быстрая сводка по дням (сегодня/вчера)
+        const todaySum = React.useMemo(()=>{
+          return items.filter(it=>it.date===todayISO).reduce((a,it)=>a+(Number(it.score)||0),0);
+        },[items, todayISO]);
+        const yestSum = React.useMemo(()=>{
+          return items.filter(it=>it.date===yesterdayISO).reduce((a,it)=>a+(Number(it.score)||0),0);
+        },[items, yesterdayISO]);
+
+        const resourceStatus = React.useMemo(()=>{
+          if(resource <= VERY_LOW_RESOURCE_THRESHOLD) return "verylow";
+          if(resource <= LOW_RESOURCE_THRESHOLD) return "low";
+          return "ok";
+        },[resource]);
+
+        const bar = React.useMemo(()=>{
+          const MIN=-500, MAX=500;
+          const v = clamp(resource, MIN, MAX);
+          const pct = ((v - MIN)/(MAX-MIN))*100;
+          return {pct};
+        },[resource]);
+
+        // авто-предложение, когда ресурс выбранного дня низкий
+        React.useEffect(()=>{
+          if(resourceStatus === "ok") return;
+
+          if(suggestion && globalFilling.some(x=>x.id===suggestion.id)) return;
+          if(!globalFilling.length){ setSuggestion(null); lastSuggestedId.current=null; return; }
+
+          const next = pickRandom(globalFilling, lastSuggestedId.current);
+          if(next){ setSuggestion(next); lastSuggestedId.current=next.id; }
+        },[resourceStatus, globalFilling.length]);
+
+        function addItem(){
+          const t = text.trim();
+          const s = clamp(Number(score)||0, -100, 100);
+          if(!t) return;
+
+          const newItem = {
+            id: (crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random())),
+            text: t,
+            score: s,
+            date: selectedDate,       // <-- привязка к выбранному дню
+            createdAt: Date.now()
+          };
+
+          setItems(prev => [newItem, ...prev]);
+          setText("");
+          setScore(0);
+        }
+
+        function removeItem(id){
+          setItems(prev => prev.filter(x=>x.id!==id));
+          if(suggestion?.id===id){ setSuggestion(null); lastSuggestedId.current=null; }
+        }
+
+        function updateScore(id, newScore){
+          const s = clamp(Number(newScore)||0, -100, 100);
+          setItems(prev => prev.map(x => x.id===id ? {...x, score:s} : x));
+        }
+
+        function requestSuggestion(){
+          if(!globalFilling.length){ setSuggestion(null); lastSuggestedId.current=null; return; }
+          const next = pickRandom(globalFilling, lastSuggestedId.current);
+          if(next){ setSuggestion(next); lastSuggestedId.current=next.id; }
+        }
+
+        function clearSelectedDay(){
+          setItems(prev => prev.filter(it => it.date !== selectedDate));
+          setSuggestion(null);
+          lastSuggestedId.current = null;
+        }
+
+        function clearAll(){
+          setItems([]);
+          setSuggestion(null);
+          lastSuggestedId.current = null;
+          try{
+            localStorage.removeItem(STORAGE_KEY);
+            // (не обязательно) чистим старый ключ, если он был
+            localStorage.removeItem("resource-tracker-v1");
+          }catch{}
+        }
+
+        return (
+          <div className="container">
+            <div className="row">
+              <h1>Ресурс-трекер</h1>
+              <button className="btn-ghost" onClick={clearAll} title="Удалить всё вообще">
+                Очистить всё
+              </button>
+            </div>
+
+            <div className="card">
+              <div className="label">Выбор дня</div>
+              <div className="tabs" style={{marginTop:8}}>
+                <button
+                  className={"tab " + (selectedDate===todayISO ? "active" : "")}
+                  onClick={()=>setSelectedDate(todayISO)}
+                >
+                  Сегодня ({formatSigned(todaySum)})
+                </button>
+                <button
+                  className={"tab " + (selectedDate===yesterdayISO ? "active" : "")}
+                  onClick={()=>setSelectedDate(yesterdayISO)}
+                >
+                  Вчера ({formatSigned(yestSum)})
+                </button>
+
+                {/* Можно раскомментировать, если захочешь выбирать любую дату:
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e)=>setSelectedDate(e.target.value)}
+                  style={{
+                    padding:"10px 12px",
+                    borderRadius:999,
+                    border:"1px solid rgba(255,255,255,0.14)",
+                    background:"transparent",
+                    color:"#e9edf1"
+                  }}
+                />
+                */}
+              </div>
+
+              <div className="small" style={{marginTop:10}}>
+                Сейчас смотришь: <b>{dayLabel(selectedDate)}</b> ({selectedDate})
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="row">
+                <div>
+                  <div className="label">Текущий ресурс за {dayLabel(selectedDate)}</div>
+                  <div className="big">{formatSigned(resource)}</div>
+                  <div className="small">
+                    {resourceStatus==="ok" && "Нормально"}
+                    {resourceStatus==="low" && "Ресурса маловато"}
+                    {resourceStatus==="verylow" && "Ресурс на нуле/в минусе"}
+                  </div>
+                </div>
+                <div style={{width:260}}>
+                  <div className="progressOuter">
+                    <div className="progressInner" style={{width: bar.pct + "%"}} />
+                  </div>
+                  <div className="small" style={{textAlign:"right", marginTop:6}}>
+                    примерная шкала [-500 .. 500]
+                  </div>
+                </div>
+              </div>
+
+              {resourceStatus!=="ok" && (
+                <div className="box" style={{marginTop:12}}>
+                  <div style={{fontWeight:700, marginBottom:6}}>Когда ресурса мало:</div>
+                  {suggestion ? (
+                    <div className="box" style={{background:"rgba(0,0,0,0.2)", marginBottom:10}}>
+                      <div className="small" style={{marginBottom:6}}>Сделай что-то наполняющее:</div>
+                      <div style={{fontSize:16, fontWeight:800, marginBottom:6}}>{suggestion.text}</div>
+                      <div className="small">
+                        эффект: {formatSigned(suggestion.score)} (из записей с &gt; 0 за любые дни)
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="small">Пока нет дел, которые наполняют (значение &gt; 0).</div>
+                  )}
+
+                  <button className="btn" onClick={requestSuggestion}>Кинь рандом</button>
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <div className="row">
+                <div>
+                  <div className="label">Добавить запись</div>
+                  <div className="small">Запись добавится в: <b>{dayLabel(selectedDate)}</b></div>
+                </div>
+                <button className="btn-ghost" onClick={clearSelectedDay} title="Удалить записи только за выбранный день">
+                  Очистить этот день
+                </button>
+              </div>
+
+              <div style={{display:"grid", gap:12, marginTop:10}}>
+                <input
+                  type="text"
+                  placeholder="Что за дело?"
+                  value={text}
+                  onChange={(e)=>setText(e.target.value)}
+                  onKeyDown={(e)=>{ if(e.key==="Enter") addItem(); }}
+                />
+
+                <div className="box">
+                  <div className="row" style={{alignItems:"baseline"}}>
+                    <div className="small">Шкала: -100 .. 100</div>
+                    <div style={{fontSize:16, fontWeight:800}}>{formatSigned(score)}</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="-100"
+                    max="100"
+                    value={score}
+                    onChange={(e)=>setScore(Number(e.target.value))}
+                    style={{width:"100%"}}
+                  />
+                  <div className="small" style={{display:"flex", justifyContent:"space-between", marginTop:6}}>
+                    <span>-100</span><span>0</span><span>+100</span>
+                  </div>
+                </div>
+
+                <button className="btn" onClick={addItem}>Добавить</button>
+              </div>
+            </div>
+
+            <div className="grid">
+              <ListCard
+                title={`Наполняют за ${dayLabel(selectedDate)} (${filling.length})`}
+                subtitle="значение > 0"
+                items={filling}
+                onRemove={removeItem}
+                onUpdateScore={updateScore}
+              />
+              <ListCard
+                title={`Расходуют за ${dayLabel(selectedDate)} (${draining.length})`}
+                subtitle="значение < 0"
+                items={draining}
+                onRemove={removeItem}
+                onUpdateScore={updateScore}
+              />
+            </div>
+
+            <div className="card">
+              <div className="label">Нейтральные за {dayLabel(selectedDate)} ({neutral.length})</div>
+              <div className="small">значение = 0</div>
+
+              {neutral.length === 0 ? (
+                <div className="small" style={{marginTop:10}}>(пусто)</div>
+              ) : (
+                <div className="list">
+                  {neutral.map(it => (
+                    <div key={it.id} className="item">
+                      <div style={{flex:1}}>
+                        <div className="item-text">{it.text}</div>
+                        <div className="meta-row">
+                          <span className="meta">эффект: {formatSigned(it.score)}</span>
+                          <span className="meta">дата: {it.date}</span>
+                        </div>
+                      </div>
+                      <button className="btn-danger" onClick={()=>removeItem(it.id)}>Удалить</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="small" style={{textAlign:"center", opacity:0.85}}>
+              Подсказка: переключай Сегодня/Вчера — ресурс и списки пересчитываются по выбранному дню.
+            </div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
