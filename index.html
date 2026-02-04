@@ -2,7 +2,7 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>MyResource</title>
     <style>
       body {
@@ -11,6 +11,9 @@
         background: #0b0c10;
         color: #e9edf1;
         padding: 24px;
+        touch-action: manipulation;
+        -webkit-user-select: none;
+        user-select: none;
       }
       .container { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
       .card {
@@ -93,7 +96,7 @@
         background: transparent;
         -webkit-appearance: none;
         appearance: none;
-        height: 22px; /* чтобы было удобнее попадать пальцем */
+        height: 22px;
         margin: 0;
       }
 
@@ -113,7 +116,7 @@
         background: #e9edf1;
         border: 2px solid rgba(0,0,0,0.25);
         box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-        margin-top: -5px; /* центрируем на дорожке */
+        margin-top: -5px;
       }
 
       /* Firefox track */
@@ -187,11 +190,80 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Telegram SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
 
     <script type="text/babel">
-      const STORAGE_KEY = "resource-tracker-v3-no-numbers";
+      // ===== CloudStorage constants and helpers =====
+      const STORAGE_NAMESPACE = "myresource_v1";
+      const DAYS_KEY = `${STORAGE_NAMESPACE}_days`;
+      const DAY_PREFIX = `${STORAGE_NAMESPACE}_day_`;
 
-      // Порог "ресурса мало" (внутренние числа; в UI не показываем)
+      function tgWebApp() {
+        return window.Telegram?.WebApp || null;
+      }
+
+      function hasCloudStorage() {
+        const tg = tgWebApp();
+        return !!(tg && tg.CloudStorage && typeof tg.CloudStorage.getItem === "function");
+      }
+
+      function cloudGetItem(key) {
+        const tg = tgWebApp();
+        return new Promise((resolve) => {
+          tg.CloudStorage.getItem(key, (err, value) => {
+            if (err) return resolve(null);
+            resolve(value ?? null);
+          });
+        });
+      }
+
+      function cloudSetItem(key, value) {
+        const tg = tgWebApp();
+        return new Promise((resolve) => {
+          tg.CloudStorage.setItem(key, value, (err, ok) => {
+            if (err) return resolve(false);
+            resolve(!!ok);
+          });
+        });
+      }
+
+      function cloudRemoveItem(key) {
+        const tg = tgWebApp();
+        return new Promise((resolve) => {
+          tg.CloudStorage.removeItem(key, (err, ok) => {
+            if (err) return resolve(false);
+            resolve(!!ok);
+          });
+        });
+      }
+
+      async function storeGet(key) {
+        if (hasCloudStorage()) return await cloudGetItem(key);
+        try { return localStorage.getItem(key); } catch { return null; }
+      }
+
+      async function storeSet(key, value) {
+        if (hasCloudStorage()) return await cloudSetItem(key, value);
+        try { localStorage.setItem(key, value); return true; } catch { return false; }
+      }
+
+      async function storeRemove(key) {
+        if (hasCloudStorage()) return await cloudRemoveItem(key);
+        try { localStorage.removeItem(key); return true; } catch { return false; }
+      }
+
+      function safeJsonParse(raw, fallback) {
+        try { return JSON.parse(raw); } catch { return fallback; }
+      }
+
+      function telegramReady() {
+        const tg = tgWebApp();
+        tg?.ready?.();
+        tg?.expand?.();
+      }
+
+      // ===== Helper functions =====
       const LOW_RESOURCE_THRESHOLD = 20;
       const VERY_LOW_RESOURCE_THRESHOLD = 0;
 
@@ -204,12 +276,14 @@
         const day = String(dt.getDate()).padStart(2,"0");
         return `${y}-${m}-${day}`;
       }
+      
       function shiftISODate(baseISO, daysDelta){
         const [y,m,d] = baseISO.split("-").map(Number);
         const dt = new Date(y, m-1, d);
         dt.setDate(dt.getDate() + daysDelta);
         return toISODateLocal(dt);
       }
+      
       function dayLabel(iso){
         const today = toISODateLocal(new Date());
         const yest = shiftISODate(today, -1);
@@ -218,20 +292,21 @@
         return "День";
       }
 
-      // Интерполяция цветов: красный -> жёлтый -> зелёный
       function lerp(a, b, t){ return a + (b - a) * t; }
+      
       function lerpRGB(c1, c2, t){
         const r = Math.round(lerp(c1[0], c2[0], t));
         const g = Math.round(lerp(c1[1], c2[1], t));
         const b = Math.round(lerp(c1[2], c2[2], t));
         return `rgb(${r}, ${g}, ${b})`;
       }
+      
       function colorFromValue(value, min, max){
         const v = clamp(value, min, max);
-        const t = (v - min) / (max - min); // 0..1
-        const RED = [229, 57, 53];     // #e53935
-        const YEL = [253, 216, 53];    // #fdd835
-        const GRN = [67, 160, 71];     // #43a047
+        const t = (v - min) / (max - min);
+        const RED = [229, 57, 53];
+        const YEL = [253, 216, 53];
+        const GRN = [67, 160, 71];
 
         if(t <= 0.5) return lerpRGB(RED, YEL, t / 0.5);
         return lerpRGB(YEL, GRN, (t - 0.5) / 0.5);
@@ -289,6 +364,7 @@
         const [text, setText] = React.useState("");
         const [score, setScore] = React.useState(0);
         const [items, setItems] = React.useState([]);
+        const [saveError, setSaveError] = React.useState(null);
 
         const todayISO = React.useMemo(()=>toISODateLocal(new Date()), []);
         const yesterdayISO = React.useMemo(()=>shiftISODate(todayISO, -1), [todayISO]);
@@ -296,33 +372,103 @@
 
         const [suggestion, setSuggestion] = React.useState(null);
         const lastSuggestedId = React.useRef(null);
+        const saveTimeoutRef = React.useRef(null);
 
-        React.useEffect(()=>{
-          try{
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if(raw){
-              const parsed = JSON.parse(raw);
-              const migrated = Array.isArray(parsed)
-                ? parsed.map(it => ({ ...it, date: it.date || todayISO }))
-                : [];
-              setItems(migrated);
-            } else {
-              // подхват старого ключа (если есть)
-              const old = localStorage.getItem("resource-tracker-v2-days") || localStorage.getItem("resource-tracker-v1");
-              if(old){
-                const parsedOld = JSON.parse(old);
-                const migratedOld = Array.isArray(parsedOld)
-                  ? parsedOld.map(it => ({ ...it, date: it.date || todayISO }))
-                  : [];
-                setItems(migratedOld);
+        // Load items from CloudStorage or localStorage
+        React.useEffect(() => {
+          telegramReady();
+
+          (async () => {
+            try {
+              const daysRaw = await storeGet(DAYS_KEY);
+              let days = safeJsonParse(daysRaw, []);
+
+              if (!days.length) {
+                const legacy =
+                  localStorage.getItem("resource-tracker-v3-no-numbers") ||
+                  localStorage.getItem("resource-tracker-v2-days") ||
+                  localStorage.getItem("resource-tracker-v1");
+
+                const legacyItems = safeJsonParse(legacy, []);
+                if (Array.isArray(legacyItems) && legacyItems.length) {
+                  const byDate = new Map();
+                  for (const it of legacyItems) {
+                    const d = it.date || todayISO;
+                    if (!byDate.has(d)) byDate.set(d, []);
+                    byDate.get(d).push({ ...it, date: d });
+                  }
+                  days = Array.from(byDate.keys()).sort();
+                  await storeSet(DAYS_KEY, JSON.stringify(days));
+
+                  for (const d of days) {
+                    const key = DAY_PREFIX + d;
+                    const dayArr = byDate.get(d) || [];
+                    await storeSet(key, JSON.stringify(dayArr));
+                  }
+                }
               }
-            }
-          }catch{}
-        },[todayISO]);
 
-        React.useEffect(()=>{
-          try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }catch{}
-        },[items]);
+              const all = [];
+              for (const d of days) {
+                const raw = await storeGet(DAY_PREFIX + d);
+                const arr = safeJsonParse(raw, []);
+                if (Array.isArray(arr)) all.push(...arr.map(x => ({ ...x, date: d })));
+              }
+
+              setItems(all);
+            } catch (err) {
+              console.error("Failed to load items:", err);
+              setSaveError("Ошибка загрузки данных");
+            }
+          })();
+        }, []);
+
+        // Debounced save to CloudStorage
+        React.useEffect(() => {
+          if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+          saveTimeoutRef.current = setTimeout(() => {
+            (async () => {
+              try {
+                const byDate = new Map();
+                for (const it of items) {
+                  const d = it.date || todayISO;
+                  if (!byDate.has(d)) byDate.set(d, []);
+                  byDate.get(d).push({ ...it, date: d });
+                }
+
+                const days = Array.from(byDate.keys()).sort();
+                await storeSet(DAYS_KEY, JSON.stringify(days));
+
+                for (const d of days) {
+                  const dayKey = DAY_PREFIX + d;
+                  const serialized = JSON.stringify(byDate.get(d) || []);
+
+                  if (serialized.length > 4096 && hasCloudStorage()) {
+                    console.warn("Day is too large for Telegram CloudStorage (4096 chars limit).", d);
+                    setSaveError(`День ${d} слишком большой для облака`);
+                    continue;
+                  }
+                  await storeSet(dayKey, serialized);
+                }
+                setSaveError(null);
+              } catch (err) {
+                console.error("Failed to save items:", err);
+                setSaveError("Ошибка сохранения данных");
+              }
+            })();
+          }, 1000);
+
+          return () => {
+            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+          };
+        }, [items, todayISO]);
+
+        // Memoized date grouping for history
+        const uniqueDates = React.useMemo(() => {
+          const dates = new Set(items.map(it => it.date));
+          return Array.from(dates).sort().reverse();
+        }, [items]);
 
         const dayItems = React.useMemo(
           ()=> items.filter(it => it.date === selectedDate),
@@ -338,10 +484,8 @@
         const draining = React.useMemo(()=> dayItems.filter(i=>i.score<0), [dayItems]);
         const neutral = React.useMemo(()=> dayItems.filter(i=>i.score===0), [dayItems]);
 
-        // Для рандома — общий список наполняющих (все дни)
         const globalFilling = React.useMemo(()=> items.filter(i=>i.score>0), [items]);
 
-        // Ресурс для табов (только цвет)
         const todaySum = React.useMemo(()=> items.filter(it=>it.date===todayISO).reduce((a,it)=>a+(Number(it.score)||0),0), [items, todayISO]);
         const yestSum  = React.useMemo(()=> items.filter(it=>it.date===yesterdayISO).reduce((a,it)=>a+(Number(it.score)||0),0), [items, yesterdayISO]);
 
@@ -351,8 +495,6 @@
           return "ok";
         },[resource]);
 
-        // Цвет ресурса: маппим дневной ресурс на диапазон
-        // (внутренне — можно подкрутить, UI это не увидит)
         const RESOURCE_MIN = -300;
         const RESOURCE_MAX = 300;
         const resourceColor = React.useMemo(
@@ -360,13 +502,11 @@
           [resource]
         );
 
-        // Позиция маркера на шкале (0..100%)
         const markerPct = React.useMemo(()=>{
           const v = clamp(resource, RESOURCE_MIN, RESOURCE_MAX);
           return ((v - RESOURCE_MIN) / (RESOURCE_MAX - RESOURCE_MIN)) * 100;
         },[resource]);
 
-        // авто-предложение, когда ресурс выбранного дня низкий
         React.useEffect(()=>{
           if(resourceStatus === "ok") return;
 
@@ -377,7 +517,8 @@
           if(next){ setSuggestion(next); lastSuggestedId.current=next.id; }
         },[resourceStatus, globalFilling.length]);
 
-        function addItem(){
+        // Memoized callbacks
+        const addItem = React.useCallback(()=>{
           const t = text.trim();
           const s = clamp(Number(score)||0, -100, 100);
           if(!t) return;
@@ -393,43 +534,66 @@
           setItems(prev => [newItem, ...prev]);
           setText("");
           setScore(0);
-        }
+        }, [text, score, selectedDate]);
 
-        function removeItem(id){
+        const removeItem = React.useCallback((id)=>{
           setItems(prev => prev.filter(x=>x.id!==id));
           if(suggestion?.id===id){ setSuggestion(null); lastSuggestedId.current=null; }
-        }
+        }, [suggestion?.id]);
 
-        function updateScore(id, newScore){
+        const updateScore = React.useCallback((id, newScore)=>{
           const s = clamp(Number(newScore)||0, -100, 100);
           setItems(prev => prev.map(x => x.id===id ? {...x, score:s} : x));
-        }
+        }, []);
 
-        function requestSuggestion(){
+        const requestSuggestion = React.useCallback(()=>{
           if(!globalFilling.length){ setSuggestion(null); lastSuggestedId.current=null; return; }
           const next = pickRandom(globalFilling, lastSuggestedId.current);
           if(next){ setSuggestion(next); lastSuggestedId.current=next.id; }
-        }
+        }, [globalFilling]);
 
-        function clearSelectedDay(){
-          setItems(prev => prev.filter(it => it.date !== selectedDate));
-          setSuggestion(null);
-          lastSuggestedId.current = null;
-        }
+        const clearSelectedDay = React.useCallback(async ()=>{
+          const d = selectedDate;
+          setItems(prev => prev.filter(it => it.date !== d));
+          try {
+            await storeRemove(DAY_PREFIX + d);
+            const daysRaw = await storeGet(DAYS_KEY);
+            const days = safeJsonParse(daysRaw, []).filter(x => x !== d);
+            await storeSet(DAYS_KEY, JSON.stringify(days));
+          } catch (err) {
+            console.error("Failed to clear day:", err);
+            setSaveError("Ошибка удаления дня");
+          }
+        }, [selectedDate]);
 
-        function clearAll(){
-          setItems([]);
-          setSuggestion(null);
-          lastSuggestedId.current = null;
-          try{
-            localStorage.removeItem(STORAGE_KEY);
-            localStorage.removeItem("resource-tracker-v2-days");
-            localStorage.removeItem("resource-tracker-v1");
-          }catch{}
-        }
+        const clearAll = React.useCallback(async ()=>{
+          try {
+            const daysRaw = await storeGet(DAYS_KEY);
+            const days = safeJsonParse(daysRaw, []);
+
+            for (const d of days) {
+              await storeRemove(DAY_PREFIX + d);
+            }
+            await storeRemove(DAYS_KEY);
+
+            setItems([]);
+            setSuggestion(null);
+            lastSuggestedId.current = null;
+            setSaveError(null);
+          } catch (err) {
+            console.error("Failed to clear all:", err);
+            setSaveError("Ошибка очистки всех данных");
+          }
+        }, []);
 
         return (
           <div className="container">
+            {saveError && (
+              <div className="card" style={{background:"rgba(255, 80, 80, 0.15)", borderColor:"rgba(255, 80, 80, 0.3)"}}>
+                <div className="small" style={{color:"#ffd2d2"}}>⚠️ {saveError}</div>
+              </div>
+            )}
+
             <div className="row">
               <h1>Ресурс-трекер</h1>
               <button className="btn-ghost" onClick={clearAll} title="Удалить всё вообще">
@@ -439,7 +603,11 @@
 
             <div className="card">
               <div className="label">Выбор дня</div>
-              <div className="tabs" style={{marginTop:8}}>
+              <div className="tabs" style={{marginTop:8, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+                <button className="btn-ghost" onClick={() => setSelectedDate(shiftISODate(selectedDate, -1))} title="Предыдущий день">
+                  ← Раньше
+                </button>
+
                 <button
                   className={"tab " + (selectedDate===todayISO ? "active" : "")}
                   onClick={()=>setSelectedDate(todayISO)}
@@ -455,10 +623,14 @@
                   <span>Вчера</span>
                   <span className="dot" style={{background: colorFromValue(yestSum, RESOURCE_MIN, RESOURCE_MAX)}} title="Ресурс цветом" />
                 </button>
+
+                <button className="btn-ghost" onClick={() => setSelectedDate(shiftISODate(selectedDate, 1))} title="Следующий день">
+                  Позже →
+                </button>
               </div>
 
               <div className="small" style={{marginTop:10}}>
-                Сейчас смотришь: <b>{dayLabel(selectedDate)}</b>
+                Сейчас смотришь: <b>{dayLabel(selectedDate)}</b> — {selectedDate}
               </div>
             </div>
             
@@ -590,8 +762,32 @@
               )}
             </div>
 
-            <div className="small" style={{textAlign:"center", opacity:0.85}}>
-              Подсказка: теперь всё читается по цвету — без цифр.
+            <div className="card">
+              <div className="label">История по дням</div>
+              <div className="small" style={{marginBottom:10}}>Нажми на день для просмотра</div>
+              
+              <div className="list">
+                {uniqueDates.map(date => {
+                  const dayItems = items.filter(it => it.date === date);
+                  const dayResource = dayItems.reduce((a, it) => a + (Number(it.score)||0), 0);
+                  const dayColor = colorFromValue(dayResource, RESOURCE_MIN, RESOURCE_MAX);
+                  
+                  return (
+                    <div
+                      key={date}
+                      className="item"
+                      style={{cursor:"pointer", opacity: selectedDate === date ? 1 : 0.7}}
+                      onClick={() => setSelectedDate(date)}
+                    >
+                      <div className="dot" style={{background: dayColor}} />
+                      <div style={{flex:1}}>
+                        <div className="item-text">{date} — {dayLabel(date)}</div>
+                        <div className="meta">{dayItems.length} записей</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         );
