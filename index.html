@@ -559,42 +559,169 @@
         return pool[Math.floor(Math.random()*pool.length)];
       }
 
-      function ListCard({ title, subtitle, items, onRemove, onUpdateScore }){
+      function OnboardingBanner({ fillingCount, onDismiss, onFocus }){
+        const progressDots = 3;
+        const filledDots = Math.min(fillingCount, progressDots);
+        const emptyDots = Math.max(0, progressDots - filledDots);
+
         return (
-          <div className="card">
-            <div className="row">
-              <div>
-                <div className="label">{title}</div>
-                <div className="small">{subtitle}</div>
+          <div className="card" style={{background:"rgba(120,200,255,0.08)", borderColor:"rgba(175,220,255,0.16)", position:"relative"}}>
+            <button
+              onClick={onDismiss}
+              style={{
+                position:"absolute",
+                top:12,
+                right:12,
+                background:"none",
+                border:"none",
+                color:"var(--text)",
+                cursor:"pointer",
+                fontSize:20,
+                opacity:0.6,
+                padding:0,
+                width:28,
+                height:28,
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"center",
+                borderRadius:"50%",
+                transition:"all 0.2s ease"
+              }}
+              onMouseEnter={(e)=>e.target.style.opacity="1"}
+              onMouseLeave={(e)=>e.target.style.opacity="0.6"}
+              title="Закрыть"
+            >
+              ×
+            </button>
+
+            <div style={{paddingRight:32}}>
+              <div style={{fontSize:15, fontWeight:700, marginBottom:8}}>Чтобы приложение помогало</div>
+              
+              <div className="small" style={{marginBottom:12, lineHeight:1.5}}>
+                {fillingCount > 0
+                  ? "Добавь ещё пару наполняющих дел — рекомендации будут точнее."
+                  : "Добавь хотя бы три дела, которые тебя наполняют — тогда я смогу предлагать поддержку, когда она понадобится."}
+              </div>
+
+              <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:12}}>
+                {Array.from({length:progressDots}).map((_, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width:10,
+                      height:10,
+                      borderRadius:"50%",
+                      background: i < filledDots ? "rgba(72,176,106,0.8)" : "rgba(175,220,255,0.2)",
+                      transition:"all 0.3s ease"
+                    }}
+                  />
+                ))}
+              </div>
+
+              <button className="btn-ghost" onClick={onFocus} style={{fontSize:13, padding:"8px 12px"}}>
+                Добавить наполняющее
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function AddRecordModal({ isOpen, selectedDate, dayLabel, text, setText, score, setScore, onAddItem, onClose }){
+        const inputRef = React.useRef(null);
+
+        React.useEffect(() => {
+          if(isOpen) inputRef.current?.focus();
+        }, [isOpen]);
+
+        if(!isOpen) return null;
+
+        return (
+          <div style={{
+            position:"fixed",
+            top:0,
+            left:0,
+            right:0,
+            bottom:0,
+            background:"rgba(0,0,0,0.5)",
+            display:"flex",
+            alignItems:"flex-end",
+            zIndex:1000
+          }}>
+            <div style={{
+              width:"100%",
+              maxWidth:"100%",
+              background:"var(--bg)",
+              borderRadius:"18px 18px 0 0",
+              padding:24,
+              maxHeight:"90vh",
+              overflowY:"auto",
+              animation:"slideUp 0.3s ease"
+            }}>
+              <style>{`
+                @keyframes slideUp {
+                  from { transform: translateY(100%); }
+                  to { transform: translateY(0); }
+                }
+              `}</style>
+
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
+                <h1 style={{margin:0, fontSize:20}}>Добавить запись</h1>
+                <button
+                  onClick={onClose}
+                  style={{
+                    background:"none",
+                    border:"none",
+                    color:"var(--text)",
+                    cursor:"pointer",
+                    fontSize:24,
+                    opacity:0.6,
+                    padding:0,
+                    width:32,
+                    height:32,
+                    display:"flex",
+                    alignItems:"center",
+                    justifyContent:"center"
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="small" style={{marginBottom:16}}>В {dayLabel(selectedDate)}</div>
+
+              <div style={{display:"grid", gap:12}}>
+                <div>
+                  <div className="label">Что за дело?</div>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Напиши, что ты делаешь..."
+                    value={text}
+                    onChange={(e)=>setText(e.target.value)}
+                    onKeyDown={(e)=>{ if(e.key==="Enter") { onAddItem(); onClose(); } }}
+                  />
+                </div>
+
+                <div>
+                  <div className="rowStart" style={{gap:8, marginBottom:8}}>
+                    <div className="label" style={{margin:0}}>Эффект на ресурс</div>
+                    <div className="dot" style={{background: colorFromValue(score, -100, 100)}} />
+                  </div>
+                  <input
+                    className="range"
+                    type="range"
+                    min="-100"
+                    max="100"
+                    value={score}
+                    onChange={(e)=>setScore(Number(e.target.value))}
+                  />
+                </div>
+
+                <button className="btn" onClick={() => { onAddItem(); onClose(); }} style={{minHeight:44, marginTop:8}}>
+                  Добавить
+                </button>
               </div>
             </div>
-
-            {items.length === 0 ? (
-              <div className="small">(пусто)</div>
-            ) : (
-              <div className="list">
-                {items.map(it => {
-                  const dotColor = colorFromValue(it.score, -100, 100);
-                  return (
-                    <div key={it.id} className="item">
-                      <div className="dot" style={{background: dotColor}} title="Эффект по цвету" />
-                      <div style={{flex:1, minWidth:0}}>
-                        <div className="item-text">{it.text}</div>
-                        <input
-                          className="range"
-                          type="range"
-                          min="-100"
-                          max="100"
-                          value={it.score}
-                          onChange={(e)=>onUpdateScore(it.id, e.target.value)}
-                        />
-                      </div>
-                      <button className="btn-danger" onClick={()=>onRemove(it.id)}>Удалить</button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         );
       }
@@ -604,6 +731,10 @@
         const [score, setScore] = React.useState(0);
         const [items, setItems] = React.useState([]);
         const [saveError, setSaveError] = React.useState(null);
+        const [filterType, setFilterType] = React.useState("all");
+        const [showHistory, setShowHistory] = React.useState(false);
+        const [dismissedOnboarding, setDismissedOnboarding] = React.useState(false);
+        const [showAddModal, setShowAddModal] = React.useState(false);
 
         const todayISO = React.useMemo(()=>toISODateLocal(new Date()), []);
         const yesterdayISO = React.useMemo(()=>shiftISODate(todayISO, -1), [todayISO]);
@@ -612,6 +743,7 @@
         const [suggestion, setSuggestion] = React.useState(null);
         const lastSuggestedId = React.useRef(null);
         const saveTimeoutRef = React.useRef(null);
+        const inputRef = React.useRef(null);
 
         // Load items from CloudStorage or localStorage
         React.useEffect(() => {
@@ -728,10 +860,26 @@
         const todaySum = React.useMemo(()=> items.filter(it=>it.date===todayISO).reduce((a,it)=>a+(Number(it.score)||0),0), [items, todayISO]);
         const yestSum  = React.useMemo(()=> items.filter(it=>it.date===yesterdayISO).reduce((a,it)=>a+(Number(it.score)||0),0), [items, yesterdayISO]);
 
+        const getResourceStatus = (val) => {
+          if(val <= -257) return { key: "break", label: "Делаем паузу ⏸️" };
+          if(val <= -214) return { key: "support", label: "Нужна поддержка 🤝" };
+          if(val <= -171) return { key: "distance", label: "Смотрим вдаль 🐢" };
+          if(val <= -128) return { key: "little", label: "Только по чуть-чуть 🧩" };
+          if(val <= -85) return { key: "blanket", label: "Согреваемся пледом 🧣" };
+          if(val <= -42) return { key: "water", label: "Пьем воды глоток 💧" };
+          if(val < 0) return { key: "powersave", label: "Режим энергосбережения 🪫" };
+          if(val === 0) return { key: "order", label: "Порядок ⚪️" };
+          if(val <= 41) return { key: "smile", label: "Улыбнулись 🌤️" };
+          if(val <= 84) return { key: "stretch", label: "Потянулись 🌱" };
+          if(val <= 127) return { key: "sparkle", label: "Искримся ✨" };
+          if(val <= 170) return { key: "coffee", label: "Сила кофе ☕️" };
+          if(val <= 213) return { key: "achieve", label: "Хотим свершений 🔆" };
+          if(val <= 256) return { key: "wave", label: "На волне 🌊" };
+          return { key: "energy", label: "Светимся от энергии 🔋" };
+        };
+
         const resourceStatus = React.useMemo(()=>{
-          if(resource <= VERY_LOW_RESOURCE_THRESHOLD) return "verylow";
-          if(resource <= LOW_RESOURCE_THRESHOLD) return "low";
-          return "ok";
+          return getResourceStatus(resource);
         },[resource]);
 
         const resourceColor = React.useMemo(
@@ -745,7 +893,7 @@
         },[resource]);
 
         React.useEffect(()=>{
-          if(resourceStatus === "ok") return;
+          if(resourceStatus.key === "order") return;
 
           if(suggestion && globalFilling.some(x=>x.id===suggestion.id)) return;
           if(!globalFilling.length){ setSuggestion(null); lastSuggestedId.current=null; return; }
@@ -831,200 +979,193 @@
               </div>
             )}
 
-            <div className="row">
-              <h1>Ресурс-трекер</h1>
-              <button className="btn-ghost" onClick={clearAll} title="Удалить всё вообще">
+            {/* Block 1: Header */}
+            <div className="row" style={{justifyContent:"space-between", alignItems:"center", gap:16, flexWrap:"wrap"}}>
+              <div style={{display:"flex", alignItems:"center", gap:24}}>
+                <h1>Ресурс-трекер</h1>
+                <div style={{display:"flex", alignItems:"center", gap:24}}>
+                  <div style={{fontSize:12, fontWeight:700, opacity:0.7}}>Статус:</div>
+                  <div style={{display:"flex", alignItems:"center", gap:12}}>
+                    <div className="dotBig" style={{background: resourceColor, boxShadow: `0 0 24px ${getGlowColor(resource, RESOURCE_MIN, RESOURCE_MAX)}`}} />
+                    <div>
+                      <div style={{fontSize:14, fontWeight:700}}>
+                        {resourceStatus.label}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button className="btn-ghost" onClick={clearAll} title="Удалить всё">
                 Очистить всё
               </button>
             </div>
 
-            <div className="card">
-              <div className="label">Выбор дня</div>
-              <div className="tabs" style={{marginTop:8, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
-                <button className="btn-ghost" onClick={() => setSelectedDate(shiftISODate(selectedDate, -1))} title="Предыдущий день">
-                  ← Раньше
-                </button>
+            {/* Onboarding Banner */}
+            {!dismissedOnboarding && globalFilling.length < 3 && (
+              <OnboardingBanner
+                fillingCount={globalFilling.length}
+                onDismiss={() => setDismissedOnboarding(true)}
+                onFocus={() => {
+                  inputRef.current?.focus();
+                  setScore(50);
+                }}
+              />
+            )}
 
+            {/* Block 2: Day Panel + Resource Status (Hero Block) */}
+            <div className="card">
+              <div className="label">День</div>
+              <div className="tabs" style={{marginTop:8, gap:8, display:"flex", flexWrap:"wrap"}}>
                 <button
                   className={"tab " + (selectedDate===todayISO ? "active" : "")}
                   onClick={()=>setSelectedDate(todayISO)}
                 >
-                  <span>Сегодня</span>
-                  <span className="dot" style={{background: colorFromValue(todaySum, RESOURCE_MIN, RESOURCE_MAX)}} title="Ресурс цветом" />
+                  Сегодня
                 </button>
-
                 <button
                   className={"tab " + (selectedDate===yesterdayISO ? "active" : "")}
                   onClick={()=>setSelectedDate(yesterdayISO)}
                 >
-                  <span>Вчера</span>
-                  <span className="dot" style={{background: colorFromValue(yestSum, RESOURCE_MIN, RESOURCE_MAX)}} title="Ресурс цветом" />
+                  Вчера
                 </button>
-
-                <button className="btn-ghost" onClick={() => setSelectedDate(shiftISODate(selectedDate, 1))} title="Следующий день">
-                  Позже →
+                <button className="tab" onClick={()=>setShowHistory(!showHistory)}>
+                  История
                 </button>
               </div>
 
-              <div className="small" style={{marginTop:10}}>
-                Сейчас смотришь: <b>{dayLabel(selectedDate)}</b> — {selectedDate}
-              </div>
-            </div>
-            
-            <div className="card">
-              <div className="row">
-                <div>
-                  <div className="label">Добавить запись</div>
-                  <div className="small">Запись добавится в: <b>{dayLabel(selectedDate)}</b></div>
-                </div>
-                <button className="btn-ghost" onClick={clearSelectedDay} title="Удалить записи только за выбранный день">
-                  Очистить этот день
-                </button>
-              </div>
-
-              <div style={{display:"grid", gap:12, marginTop:10}}>
-                <input
-                  type="text"
-                  placeholder="Что за дело?"
-                  value={text}
-                  onChange={(e)=>setText(e.target.value)}
-                  onKeyDown={(e)=>{ if(e.key==="Enter") addItem(); }}
-                />
-
-                <div className="box">
-                  <div className="row" style={{alignItems:"center"}}>
-                    <div className="small">Шкала эффекта</div>
-                    <div className="dot" style={{background: colorFromValue(score, -100, 100)}} title="Текущее значение цветом" />
-                  </div>
-
+              {showHistory && (
+                <div style={{marginTop:12, paddingTop:12, borderTop:"1px solid rgba(175,220,255,0.12)"}}>
                   <input
-                    className="range"
-                    type="range"
-                    min="-100"
-                    max="100"
-                    value={score}
-                    onChange={(e)=>setScore(Number(e.target.value))}
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e)=>{ setSelectedDate(e.target.value); setShowHistory(false); }}
+                    style={{width:"100%", padding:10, borderRadius:12, border:"1px solid rgba(175,220,255,0.14)", background:"rgba(0,0,0,0.2)", color:"var(--text)", fontSize:14}}
                   />
-
-                  <div className="small" style={{display:"flex", justifyContent:"space-between", marginTop:6}}>
-                    <span>расходует</span><span>нейтрально</span><span>наполняет</span>
-                  </div>
-                </div>
-
-                <button className="btn" onClick={addItem}>Добавить</button>
-              </div>
-            </div>
-
-
-            <div className="card">
-              <div className="row">
-                <div>
-
-                  <div className="rowStart" style={{marginTop:8}}>
-                    <div className="dotBig" style={{background: resourceColor, boxShadow: `0 0 24px ${getGlowColor(resource, RESOURCE_MIN, RESOURCE_MAX)}, 0 0 24px rgba(0,0,0,0.5)`}} title="Ресурс цветом" />
-                    <div className="small">
-                      {resourceStatus==="ok" && "Супер молодечик!"}
-                      {resourceStatus==="low" && "Ещё чуть-чуть и будем выжаты, как лимон"}
-                      {resourceStatus==="verylow" && "Пора восполнитть силы!"}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="gradBarWrap">
-                  <div className="gradBar" aria-label="Шкала ресурса (градиент)" />
-                  <div className="gradMarker" style={{left: `${markerPct}%`, background: resourceColor}} title="Текущее положение" />
-                  <div className="small" style={{textAlign:"right", marginTop:6}}>
-                    шкала ресурса дня
-                  </div>
-                </div>
-              </div>
-
-              {resourceStatus!=="ok" && (
-                <div className="box" style={{marginTop:12}}>
-                  <div style={{fontWeight:700, marginBottom:6}}>Это даст тебе сил):</div>
-
-                  {suggestion ? (
-                    <div className="box-glass" style={{marginBottom:10, padding:12, borderRadius:12}}>
-                      <div className="small" style={{marginBottom:6}}>Сделай что-то наполняющее:</div>
-                      <div style={{fontSize:16, fontWeight:800, marginBottom:6}}>{suggestion.text}</div>
-                      <div className="rowStart">
-                        <span className="dot" style={{background: colorFromValue(suggestion.score, -100, 100)}} />
+                  <div className="small" style={{marginTop:8, maxHeight:200, overflowY:"auto"}}>
+                    {uniqueDates.map(date => (
+                      <div
+                        key={date}
+                        onClick={()=>{ setSelectedDate(date); setShowHistory(false); }}
+                        style={{padding:8, cursor:"pointer", opacity:selectedDate===date?1:0.6, borderRadius:8, background:selectedDate===date?"rgba(120,200,255,0.12)":"transparent"}}
+                      >
+                        {dayLabel(date)} — {date}
                       </div>
-                    </div>
-                  ) : (
-                    <div className="small">Пока ничего не записано, давай добавим чуть-чуть (положительные).</div>
-                  )}
-
-                  <button className="btn" onClick={requestSuggestion}>Другое занятие</button>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              <div className="row" style={{marginTop:12, gap:16, alignItems:"flex-start"}}>
+              </div>
             </div>
 
-            <div className="grid">
-              <ListCard
-                title={`Наполняют за ${dayLabel(selectedDate)} (${filling.length})`}
-                subtitle="положительные"
-                items={filling}
-                onRemove={removeItem}
-                onUpdateScore={updateScore}
-              />
-              <ListCard
-                title={`Расходуют за ${dayLabel(selectedDate)} (${draining.length})`}
-                subtitle="отрицательные"
-                items={draining}
-                onRemove={removeItem}
-                onUpdateScore={updateScore}
-              />
-            </div>
+            {/* Block 3: Quick Add (Primary Action) */}
+            <button className="btn" onClick={() => setShowAddModal(true)} style={{width:"100%", minHeight:48, fontSize:16}}>
+              + Добавить запись
+            </button>
 
+            <AddRecordModal
+              isOpen={showAddModal}
+              selectedDate={selectedDate}
+              dayLabel={dayLabel}
+              text={text}
+              setText={setText}
+              score={score}
+              setScore={setScore}
+              onAddItem={addItem}
+              onClose={() => { setShowAddModal(false); setText(""); setScore(0); }}
+            />
+
+            {/* Block 4: Support Now (Conditional) */}
+            {resourceStatus.key !== "order" && (
+              <div className="card" style={{background:"rgba(120,200,255,0.08)", borderColor:"rgba(175,220,255,0.16)"}}>                <div style={{fontWeight:700, marginBottom:10}}>Поддержка сейчас</div>
+
+                {suggestion ? (
+                  <div style={{marginBottom:12, padding:12, borderRadius:12, border:"1px solid rgba(175,220,255,0.14)", background:"rgba(255,255,255,0.04)"}}>
+                    <div className="small" style={{marginBottom:6, opacity:0.8}}>Попробуй вот это:</div>
+                    <div className="rowStart" style={{gap:10, alignItems:"flex-start"}}>
+                      <div className="dot" style={{background: colorFromValue(suggestion.score, -100, 100), flexShrink:0, marginTop:2}} />
+                      <div style={{fontSize:15, fontWeight:700}}>{suggestion.text}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="small" style={{opacity:0.8, marginBottom:12}}>Добавь положительные записи, и я предложу что-то подходящее.</div>
+                )}
+
+                <button className="btn-ghost" onClick={requestSuggestion}>Ещё вариант</button>
+              </div>
+            )}
+
+            {/* Block 5: Day Records with Filters */}
             <div className="card">
-              <div className="label">Нейтральные за {dayLabel(selectedDate)} ({neutral.length})</div>
-              <div className="small">нулевые</div>
+              <div className="label">Записи дня</div>
+              
+              <div className="tabs" style={{marginTop:8, gap:8, display:"flex", flexWrap:"wrap"}}>
+                <button
+                  className={"tab " + (filterType==="all" ? "active" : "")}
+                  onClick={()=>setFilterType("all")}
+                >
+                  Все
+                </button>
+                <button
+                  className={"tab " + (filterType==="fills" ? "active" : "")}
+                  onClick={()=>setFilterType("fills")}
+                >
+                  Наполняет
+                </button>
+                <button
+                  className={"tab " + (filterType==="neutral" ? "active" : "")}
+                  onClick={()=>setFilterType("neutral")}
+                >
+                  Нейтрально
+                </button>
+                <button
+                  className={"tab " + (filterType==="drains" ? "active" : "")}
+                  onClick={()=>setFilterType("drains")}
+                >
+                  Расходует
+                </button>
+              </div>
 
-              {neutral.length === 0 ? (
-                <div className="small" style={{marginTop:10}}>(пусто)</div>
+              {dayItems.length === 0 ? (
+                <div className="small" style={{marginTop:12, opacity:0.7}}>Пока нет записей за этот день.</div>
               ) : (
-                <div className="list">
-                  {neutral.map(it => (
-                    <div key={it.id} className="item">
-                      <div className="dot" style={{background: colorFromValue(it.score, -100, 100)}} />
-                      <div style={{flex:1}}>
+                <div className="list" style={{marginTop:12}}>
+                  {dayItems.filter(it => {
+                    if(filterType==="all") return true;
+                    if(filterType==="fills") return it.score>0;
+                    if(filterType==="neutral") return it.score===0;
+                    if(filterType==="drains") return it.score<0;
+                    return true;
+                  }).map(it => (
+                    <div key={it.id} className="item" style={{flexDirection:"column", alignItems:"stretch", gap:10}}>
+                      <div style={{display:"flex", gap:12, alignItems:"center"}}>
+                        <div className="dot" style={{background: colorFromValue(it.score, -100, 100), flexShrink:0}} />
                         <div className="item-text">{it.text}</div>
-                        <div className="meta">эффект: цветом</div>
                       </div>
-                      <button className="btn-danger" onClick={()=>removeItem(it.id)}>Удалить</button>
+                      <div style={{display:"flex", gap:12, alignItems:"center"}}>
+                        <input
+                          className="range"
+                          type="range"
+                          min="-100"
+                          max="100"
+                          value={it.score}
+                          onChange={(e)=>updateScore(it.id, Number(e.target.value))}
+                          style={{flex:1, height:6}}
+                        />
+                        <button className="btn-danger" onClick={()=>removeItem(it.id)} style={{minWidth:44, minHeight:44, flexShrink:0}}>✕</button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="card">
-              <div className="label">История по дням</div>
-              <div className="small" style={{marginBottom:10}}>Нажми на день для просмотра</div>
-              
-              <div className="list">
-                {uniqueDates.map(date => {
-                  const dayItems = items.filter(it => it.date === date);
-                  const dayResource = dayItems.reduce((a, it) => a + (Number(it.score)||0), 0);
-                  const dayColor = colorFromValue(dayResource, RESOURCE_MIN, RESOURCE_MAX);
-                  
-                  return (
-                    <div
-                      key={date}
-                      className="item"
-                      style={{cursor:"pointer", opacity: selectedDate === date ? 1 : 0.7}}
-                      onClick={() => setSelectedDate(date)}
-                    >
-                      <div className="dot" style={{background: dayColor}} />
-                      <div style={{flex:1}}>
-                        <div className="item-text">{date} — {dayLabel(date)}</div>
-                        <div className="meta">{dayItems.length} записей</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Block 6: Day Actions */}
+            <div style={{marginTop:24}}>
+              <button className="btn-ghost" onClick={clearSelectedDay} style={{width:"100%", minHeight:44}}>
+                Очистить {dayLabel(selectedDate)}
+              </button>
             </div>
           </div>
         );
